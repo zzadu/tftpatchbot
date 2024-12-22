@@ -8,11 +8,16 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver import ActionChains
 from selenium.common.exceptions import NoSuchElementException
+from selenium.webdriver.chrome.service import Service
+from webdriver_manager.chrome import ChromeDriverManager
 
 
 options = webdriver.ChromeOptions()
-options.add_argument("headless")
-driver = webdriver.Chrome(options=options)
+options.add_argument("--headless")
+options.add_argument("--no-sandbox")
+options.add_argument("--window-size=1920,1080")
+driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+
 bot = commands.Bot(command_prefix='!',intents=discord.Intents.all())
 listUrl = 'https://teamfighttactics.leagueoflegends.com/ko-kr/news/'
 response = requests.get(listUrl)
@@ -50,10 +55,12 @@ async def patch(ctx):
             print(xpath)
             try:
                 titleCard = driver.find_element(By.XPATH, xpath)
-                action.move_to_element(titleCard).perform()
+                driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", titleCard)
+
                 WebDriverWait(driver, 10).until(
                     EC.element_to_be_clickable((By.XPATH, xpath))
                 )
+                await ctx.send(f"# {tagText}\n# :heavy_minus_sign:\n")
                 titleCard.click()
                 break
             except Exception as e:
@@ -100,7 +107,7 @@ async def getPatchNote(ctx):
         content_divs = patchSoup.find_all('div', id='patch-notes-container')
         
         for div in content_divs:
-            for element in div.find_all(['h2', 'h4', 'li', 'img', 'blockquote']):
+            for element in div.find_all(['h2', 'h4', 'li', 'span', 'blockquote']):
                 if element.name == 'h2':
                     if element.get('id') == 'patch-top':
                         continue
@@ -110,7 +117,7 @@ async def getPatchNote(ctx):
                         combined_message = "\n".join(discord_message)
                         await ctx.send(combined_message)
                         discord_message = []
-                    discord_message.append(f"\n# {element.get_text(strip=True)}\n")
+                    await ctx.send(f"# :heavy_minus_sign:\n# {element.string}\n")
                 elif element.name == 'h4':
                     if isLi:
                         isLi = False
@@ -118,16 +125,16 @@ async def getPatchNote(ctx):
                         combined_message = "\n".join(discord_message)
                         await ctx.send(combined_message)
                         discord_message = []
-                    discord_message.append(f"\n## {element.get_text(strip=True)}\n")
+                    discord_message.append(f"\n\n## {element.string}\n")
                 elif element.name == 'li':
                     li_text = ""
                     
                     for child in element.contents:
                         if child.name == 'strong':
-                            strong_text = f" **{child.get_text(strip=True)}** "
+                            strong_text = f" **{child.string}** "
                             li_text += strong_text
                         else:
-                            li_text += child.get_text(strip=True)
+                            li_text += child.string
 
                     messageResult = f"* {li_text}\n"
 
@@ -136,7 +143,7 @@ async def getPatchNote(ctx):
                         isLi = True
                         charCnt = 0
 
-                    if charCnt + len(messageResult) >= 1990:
+                    if charCnt + len(messageResult) >= 1900:
                         combined_message = "\n".join(discord_message)
                         await ctx.send(combined_message)
                         charCnt = 0
@@ -152,22 +159,21 @@ async def getPatchNote(ctx):
                         if child.name == 'br':
                             quote += "\n ### "
                         else:
-                            quote += f" {child.get_text(strip=True)}"
+                            quote += f" {child.string.strip()}"
 
                     discord_message.append(quote)
 
                     combined_message = "\n".join(discord_message)
                     await ctx.send(combined_message)
                     discord_message = []
-                elif element.name == 'div' and element['class'][0] == 'content-border':
-                    for child in element.contents:
+                elif element.name == 'span' and 'content-border' in element.get('class', []):
+                    for child in element.find_all('img'):
                         if child.name == 'img':
-                            url = child.get_text(strip=True)
-                            img = requests.get(url).content
-                            await ctx.send(file=discord.File(fp=img))
+                            url = child['src']
+                            embed = discord.Embed().set_image(url = url)
+                            await ctx.send(embed=embed)
 
                         
-
 
             # Discord 메시지 제한 (2000자) 대비 슬라이싱
             combined_message = "\n".join(discord_message)
